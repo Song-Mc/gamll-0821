@@ -27,6 +27,8 @@ public class CorsConfig {
         corsConfiguration.addAllowedOrigin("http://manager.gmall.com");
         corsConfiguration.addAllowedOrigin("http://api.gmall.com");
         corsConfiguration.addAllowedOrigin("http://localhost:1000");
+        corsConfiguration.addAllowedOrigin("http://gmall.com");
+        corsConfiguration.addAllowedOrigin("http://www.gmall.com");
         // 允许的请求方法 *代表所有方法
         corsConfiguration.addAllowedMethod("*");
         // 允许跨域访问携带的头信息  *代表所有头信息

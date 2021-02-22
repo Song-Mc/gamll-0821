@@ -9,36 +9,27 @@ import org.springframework.data.elasticsearch.annotations.FieldType;
 import java.util.Date;
 import java.util.List;
 
-/**
- * @author : SongMc
- * @date : 2021/1/28 20:22
- * className : Goods
- * package: com.atguigu.gmall.search.pojo
- * version : 1.0
- * Description
- */
 @Data
-@Document(indexName = "goods",type = "info",shards = 3,replicas = 2)
+@Document(indexName = "goods", type = "info", shards = 3, replicas = 2)
 public class Goods {
 
     // 商品列表所需的字段
     @Id
     private Long skuId;
-    @Field(type = FieldType.Keyword,index = false)
+    @Field(type = FieldType.Keyword, index = false)
     private String defaultImage;
-//    @Field(type = FieldType.Text,analyzer = "ik_max_word")
     @Field(type = FieldType.Double)
     private Double price;
-    @Field(type = FieldType.Text,analyzer = "ik_max_word")
+    @Field(type = FieldType.Text, analyzer = "ik_max_word")
     private String title;
-    @Field(type = FieldType.Keyword,index = false)
+    @Field(type = FieldType.Keyword, index = false)
     private String subTitle;
 
     // 排序所需字段
     @Field(type = FieldType.Long)
     private Long sales = 0l; // 销量
     @Field(type = FieldType.Date)
-    private Date createTime; // 新品spu的创建时间
+    private Date createTime; // 新品，spu的创建时间
 
     // 过滤的库存字段
     @Field(type = FieldType.Boolean)
@@ -61,10 +52,5 @@ public class Goods {
     // 检索类型规格参数聚合所需字段
     @Field(type = FieldType.Nested)
     private List<SearchAttrValue> searchAtts;
-
-
-
-
-
 
 }

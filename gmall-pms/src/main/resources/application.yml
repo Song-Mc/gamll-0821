@@ -27,6 +27,14 @@ spring:
     password: 123456
   redis:
     host: 192.168.184.128
+  rabbitmq:
+    host: 192.168.184.128
+    port: 5672
+    username: admin
+    password: 123456
+    virtual-host: /admin
+    publisher-confirm-type: correlated
+    publisher-returns: true
 feign:
   sentinel:
     enabled: true
@@ -36,3 +44,6 @@ mybatis-plus:
   global-config:
     db-config:
       id-type: auto
+logging:
+  level:
+    com.atguigu.gmall: debug

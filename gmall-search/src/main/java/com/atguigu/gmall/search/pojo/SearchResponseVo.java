@@ -6,14 +6,6 @@ import lombok.Data;
 
 import java.util.List;
 
-/**
- * @author : SongMc
- * @date : 2021/1/31 15:11
- * className : SearchResponseVo
- * package: com.atguigu.gmall.search.pojo
- * version : 1.0
- * Description
- */
 @Data
 public class SearchResponseVo {
 
@@ -29,11 +21,8 @@ public class SearchResponseVo {
     // 分页所需的数据
     private Integer pageNum;
     private Integer pageSize;
-
     // 总记录数
     private Long total;
-
     // 当前页的具体数据
     private List<Goods> goodsList;
-
 }
