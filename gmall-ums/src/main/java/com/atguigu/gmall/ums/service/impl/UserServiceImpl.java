@@ -90,6 +90,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
                 return userEntity;
             }
         }
+
         return null;
     }
 
