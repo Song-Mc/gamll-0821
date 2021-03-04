@@ -26,11 +26,14 @@ import org.springframework.scheduling.annotation.AsyncResult;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.concurrent.ListenableFuture;
+import sun.nio.cs.ext.ISCII91;
 
 import java.math.BigDecimal;
+import java.security.Key;
 import java.util.List;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * @author : SongMc
@@ -47,7 +50,7 @@ public class CartService {
     private StringRedisTemplate redisTemplate;
 
     @Autowired
-    private CartMapper cartMapper;
+    private CartAsyncService asyncService;
 
     @Autowired
     private GmallPmsClient pmsClient;
@@ -59,6 +62,8 @@ public class CartService {
     private GmallSmsClient smsClient;
 
     private static final String KEY_PREFIX = "cart:info:";
+    private static final String PRICE_PREFIX = "cart:price:";
+
 
     public void saveCart(Cart cart) {
 
@@ -78,7 +83,8 @@ public class CartService {
             cart.setCount(cart.getCount().add(count));
             // 用更新后的购物车对象覆盖掉redis中的对象
 //            hashOps.put(skuId,JSON.toJSONString(cart));  重复可抽取
-            this.cartMapper.update(cart, new UpdateWrapper<Cart>().eq("user_id", userId).eq("sku_id", skuId));
+            this.asyncService.updateCart(userId,skuId,cart);
+//            this.cartMapper.update(cart, new UpdateWrapper<Cart>().eq("user_id", userId).eq("sku_id", skuId));
         } else {
             // 不包含：新增一条记录
             cart.setUserId(userId);
@@ -110,12 +116,17 @@ public class CartService {
             cart.setSales(JSON.toJSONString(itemSaleVos));
 
 //            hashOps.put(skuId,JSON.toJSONString(cart));
-            this.cartMapper.insert(cart);
+//            this.cartMapper.insert(cart);
+            this.asyncService.insertCart(userId,cart);
+            // 加入购物车时加入价格缓存
+            this.redisTemplate.opsForValue().set(PRICE_PREFIX + skuId,skuEntity.getPrice().toString());
 
         }
         hashOps.put(skuId, JSON.toJSONString(cart));
 
     }
+
+
 
     private String getUserId() {
         UserInfo userInfo = LoginInterceptor.getUserInfo();
@@ -167,5 +178,150 @@ public class CartService {
             e.printStackTrace();
             // return AsyncResult.forExecutionException(e);
         }
+    }
+
+    public List<Cart> queryCarts() {
+
+        // 1.获取userKey
+        UserInfo userInfo = LoginInterceptor.getUserInfo();
+        String userKey = userInfo.getUserKey();
+        // 组装key
+        String unloginKey = KEY_PREFIX + userKey;
+        // 2.根据userKey查询未登录的购物车
+        // 获取未登录购物车的内存的map
+        BoundHashOperations<String, Object, Object> hashOps = this.redisTemplate.boundHashOps(unloginKey);
+        // 获取未登录用户购物车的所有记录List<String>
+        List<Object> unloginCartJsons = hashOps.values();
+        List<Cart> unloginCarts = null;
+        if (!CollectionUtils.isEmpty(unloginCartJsons)){
+            unloginCarts = unloginCartJsons.stream().map(cartJson -> {
+                Cart cart = JSON.parseObject(cartJson.toString(),Cart.class);
+                cart.setCurrentPrice(new BigDecimal(this.redisTemplate.opsForValue().get(PRICE_PREFIX + cart.getSkuId())));
+                return cart;
+            }).collect(Collectors.toList());
+        }
+
+
+        // 3.获取userId
+        Long userId = userInfo.getUserId();
+        // 4.如果userId为空，直接返回
+        if (userId == null){
+            return unloginCarts;
+        }
+        // 5.把未登录的购物车合并到登录状态的购物车
+        String loginKey = KEY_PREFIX + userId;
+        BoundHashOperations<String, Object, Object> loginHashOps = this.redisTemplate.boundHashOps(loginKey);
+        if (!CollectionUtils.isEmpty(unloginCarts)){
+            // 未登录状态的购物车记录
+            unloginCarts.forEach(cart -> {
+                String skuId = cart.getSkuId().toString();
+                BigDecimal count = cart.getCount();
+                if (loginHashOps.hasKey(skuId)){
+                    // 用户的购物车包含了该记录，合并数量
+                    // 获取登录购物车的对应记录
+                    String cartJson = loginHashOps.get(skuId).toString();
+                    cart = JSON.parseObject(cartJson,Cart.class);
+                    cart.setCount(cart.getCount().add(count));
+                    // 写入redis  异步写入mysql
+//                    this.cartMapper.update(cart, new UpdateWrapper<Cart>().eq("user_id", userId.toString()).eq("sku_id", skuId));
+                    this.asyncService.updateCart(userId.toString(),skuId,cart);
+                } else {
+                    // 用户的购物车不包含该记录，新增记录
+                    cart.setUserId(userId.toString());
+//                    this.cartMapper.insert(cart);
+                    this.asyncService.insertCart(userId.toString(),cart);
+                }
+                loginHashOps.put(skuId,JSON.toJSONString(cart));
+            });
+        }
+
+        // 6.把未登录的购物车删除
+        this.redisTemplate.delete(unloginKey);
+//        this.cartMapper.delete(new UpdateWrapper<Cart>().eq("user_id", userKey));
+        this.asyncService.deleteCart(userKey);
+
+        // 7.返回登录状态的购物车
+        List<Object> cartJsons = loginHashOps.values();
+        if (!CollectionUtils.isEmpty(cartJsons)){
+            return cartJsons.stream().map(cartJson -> {
+                Cart cart = JSON.parseObject(cartJson.toString(),Cart.class);
+                cart.setCurrentPrice(new BigDecimal(this.redisTemplate.opsForValue().get(PRICE_PREFIX + cart.getSkuId())));
+                return cart;
+            }).collect(Collectors.toList());
+        }
+        return null;
+
+    }
+
+    public void updateNum(Cart cart) {
+
+        // 1.获取userKey或userId
+        String userId = this.getUserId();
+        // 2.获取内层map的操作对象
+        BoundHashOperations<String, Object, Object> hashOps = this.redisTemplate.boundHashOps(KEY_PREFIX + userId);
+
+        // 判断有没有购物车id
+        if (!hashOps.hasKey(cart.getSkuId().toString())){
+            throw new CartException("该用户对应的购物车数据不存在");
+        }
+        // 3.更新对应的购物车数量
+        BigDecimal count = cart.getCount();
+        String cartJson = hashOps.get(cart.getSkuId().toString()).toString();
+        cart = JSON.parseObject(cartJson,Cart.class);
+        cart.setCount(count);
+        // 4.写入数据和redis
+        hashOps.put(cart.getSkuId().toString(),JSON.toJSONString(cart));
+        this.asyncService.updateCart(userId,cart.getSkuId().toString(),cart);
+
+    }
+
+    public void updateStatus(Cart cart) {
+        // 1.获取userKey或userId
+        String userId = this.getUserId();
+        // 2.获取内层map的操作对象
+        BoundHashOperations<String, Object, Object> hashOps = this.redisTemplate.boundHashOps(KEY_PREFIX + userId);
+
+        // 判断有没有购物车id
+        if (!hashOps.hasKey(cart.getSkuId().toString())){
+            throw new CartException("该用户对应的购物车数据不存在");
+        }
+        // 3.更新对应的购物车状态
+        Boolean check = cart.getCheck();
+        String cartJson = hashOps.get(cart.getSkuId().toString()).toString();
+        cart = JSON.parseObject(cartJson,Cart.class);
+        cart.setCheck(check);
+        // 4.写入数据和redis
+        hashOps.put(cart.getSkuId().toString(),JSON.toJSONString(cart));
+        this.asyncService.updateCart(userId,cart.getSkuId().toString(),cart);
+
+    }
+
+    public void deleteCart(Long skuId) {
+
+        // 1.获取userKey或userId
+        String userId = this.getUserId();
+        // 2.获取内层map的操作对象
+        BoundHashOperations<String, Object, Object> hashOps = this.redisTemplate.boundHashOps(KEY_PREFIX + userId);
+
+        // 判断有没有购物车id
+        if (!hashOps.hasKey(skuId.toString())){
+            throw new CartException("该用户对应的购物车数据不存在");
+        }
+        hashOps.delete(skuId.toString());
+        this.asyncService.deleteCartBySkuId(userId,skuId);
+
+    }
+
+    public List<Cart> queryCheckedCarts(Long userId) {
+
+        String key = KEY_PREFIX + userId;
+
+        BoundHashOperations<String, Object, Object> hashOps = this.redisTemplate.boundHashOps(key);
+        List<Object> cartJsons = hashOps.values();
+        if (CollectionUtils.isEmpty(cartJsons)){
+            return null;
+        }
+        return cartJsons.stream().map(cartJson -> JSON.parseObject(cartJson.toString(),Cart.class)).filter(Cart::getCheck).collect(Collectors.toList());
+
     }
 }

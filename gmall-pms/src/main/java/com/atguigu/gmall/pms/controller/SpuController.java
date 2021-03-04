@@ -8,6 +8,7 @@ import com.atguigu.gmall.pms.service.SpuService;
 import com.atguigu.gmall.pms.vo.SpuVo;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,6 +29,9 @@ public class SpuController {
 
     @Autowired
     private SpuService spuService;
+
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
 
     /**
      * 根据条件查询商品信息并分页显示
@@ -88,6 +92,7 @@ public class SpuController {
     public ResponseVo update(@RequestBody SpuEntity spu){
 		spuService.updateById(spu);
 
+		this.rabbitTemplate.convertAndSend("PMS_ITEM_EXCHANGE","item.update",spu.getId());
         return ResponseVo.ok();
     }
 

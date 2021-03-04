@@ -1,0 +1,36 @@
+server:
+  port: 18092
+spring:
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+    sentinel:
+      transport:
+        dashboard: localhost:8080
+        port: 8719
+  zipkin:
+    base-url: http://127.0.0.1:9411
+    sender:
+      type: web
+    discovery-client-enabled: true
+  sleuth:
+    sampler:
+      probability: 1
+  redis:
+    host: 192.168.184.128
+  thymeleaf:
+    cache: false
+  rabbitmq:
+    host: 192.168.184.128
+    virtual-host: /admin
+    username: admin
+    password: 123456
+    publisher-confirm-type: correlated
+    publisher-returns: true
+feign:
+  sentinel:
+    enabled: true
+jwt:
+  pubKeyPath: E:\atguigu\java0821\stu\GULISHOPPING\gamll-0821\rsa\rsa.pub
+  cookieName: GMALL-TOKEN
